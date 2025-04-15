@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Dashboard</title>
+</head>
+<body>
+  <h2>Welcome <%= username %></h2>
+
+  <!-- Logout Button -->
+  <a href="/logout"><button>Logout</button></a>
+
+  <form action="/upload" method="POST" enctype="multipart/form-data">
+    <input type="file" name="file" required>
+    <button type="submit">Upload</button>
+  </form>
+
+  <h3>Your Files</h3>
+  <table border="1" cellpadding="5" cellspacing="0" style="margin: 0 auto;">
+    <thead>
+      <tr>
+        <th>Filename</th>
+        <th>Upload Date & Time</th>
+        <th>Action</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% files.forEach(file => { %>
+        <tr>
+          <td><%= file.filename %></td>
+          <td><%= file.upload_date %></td>
+          <td>
+            <a href="/download/<%= file.filename %>">Download</a>
+            <a href="/delete/<%= file.filename %>">Delete</a>
+          </td>
+        </tr>
+      <% }); %>
+    </tbody>
+  </table>
+</body>
+</html>
