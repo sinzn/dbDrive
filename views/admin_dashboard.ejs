@@ -1,0 +1,36 @@
+<html>
+<head>
+  <title>Admin Dashboard</title>
+</head>
+<body>
+  <center>
+    <h2>Welcome Admin, <%= user.username %></h2>
+
+    <h3>All User Files</h3>
+      <form action="/logout" method="GET">
+      <button type="submit">Logout</button>
+    </form>
+    <table border="1">
+      <tr>
+        <th>Username</th>
+        <th>File Name</th>
+        <th>Uploaded At</th>
+        <th>Actions</th>
+      </tr>
+      <% files.forEach(file => { %>
+        <tr>
+          <td><%= file.username %></td>
+          <td><%= file.originalname %></td>
+          <td><%= new Date(file.uploaded_at).toLocaleString() %></td>
+          <td>
+            <a href="/download/<%= file.filename %>">Download</a>
+            <form method="POST" action="/admin/delete/<%= file.id %>" style="display:inline;">
+              <button type="submit">Delete</button>
+            </form>
+          </td>
+        </tr>
+      <% }) %>
+    </table>
+  </center>
+</body>
+</html>
