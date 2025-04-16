@@ -3,164 +3,114 @@ const session = require('express-session');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
-const bcrypt = require('bcrypt');
-const db = require('./db');
-const app = express();
 require('dotenv').config();
 
-// Middleware
-app.use(express.urlencoded({ extended: true }));
-app.use(express.static('public'));
-app.use(session({ secret: process.env.SESSION_SECRET, resave: false, saveUninitialized: true }));
+const app = express();
+const conn = require('./db');
 
-app.set('views', path.join(__dirname, 'views'));
 app.set('view engine', 'ejs');
+app.use(express.urlencoded({ extended: true }));
+app.use('/uploads', express.static(path.join(__dirname, 'public/uploads')));
 
-// Create uploads directory if it doesn't exist
-if (!fs.existsSync('./uploads')) fs.mkdirSync('./uploads');
+app.use(session({
+  secret: process.env.SESSION_SECRET,
+  resave: false,
+  saveUninitialized: false
+}));
 
-// Multer setup for file uploads
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const userDir = `./uploads/${req.session.user.username}`;
-    if (!fs.existsSync(userDir)) fs.mkdirSync(userDir);
-    cb(null, userDir);
-  },
-  filename: (req, file, cb) => cb(null, Date.now() + '-' + file.originalname),
+  destination: (req, file, cb) => cb(null, 'public/uploads'),
+  filename: (req, file, cb) => cb(null, Date.now() + '_' + file.originalname)
 });
-
 const upload = multer({ storage });
 
-// Authentication Middleware
-function isAuth(req, res, next) {
+function isAuthenticated(req, res, next) {
   if (req.session.user) return next();
   res.redirect('/login');
 }
 
 function isAdmin(req, res, next) {
-  if (req.session.user && req.session.user.role === 'admin') return next();
+  if (req.session.user && req.session.user.is_admin) return next();
   res.redirect('/dashboard');
 }
 
-// Routes
 app.get('/', (req, res) => res.redirect('/login'));
 
-// Registration Route
-app.get('/register', (req, res) => res.sendFile(__dirname + '/views/register.html'));
-
+app.get('/register', (req, res) => res.render('register'));
 app.post('/register', (req, res) => {
-  const { username, password, role } = req.body;
-
-  // Check if the username already exists
-  db.query('SELECT * FROM users WHERE username = ?', [username], (err, results) => {
-    if (err) {
-      console.log("Error checking if user exists:", err);
-      return res.send('Error occurred while registering');
-    }
-
-    if (results.length > 0) {
-      return res.send('User already exists');
-    }
-
-    // Hash the password
-    bcrypt.hash(password, 10, (err, hashedPassword) => {
-      if (err) {
-        console.log("Error hashing password:", err);
-        return res.send('Error occurred while registering');
-      }
-
-      // Insert new user with hashed password and role
-      db.query('INSERT INTO users (username, password, role) VALUES (?, ?, ?)', [username, hashedPassword, role || 'user'], (err, results) => {
-        if (err) {
-          console.log("Error inserting user:", err);
-          return res.send('Error occurred while inserting user');
-        }
-
-        // Redirect to login page after successful registration
-        res.redirect('/login');
-      });
-    });
-  });
+  const { username, password, is_admin } = req.body;
+  const adminFlag = is_admin ? 1 : 0;
+  conn.query('INSERT INTO users (username, password, is_admin) VALUES (?, ?, ?)',
+    [username, password, adminFlag], () => res.redirect('/login'));
 });
 
-// Login Route
-app.get('/login', (req, res) => res.sendFile(__dirname + '/views/login.html'));
-
+app.get('/login', (req, res) => res.render('login'));
 app.post('/login', (req, res) => {
   const { username, password } = req.body;
-
-  db.query('SELECT * FROM users WHERE username = ?', [username], (err, results) => {
-    if (err) {
-      console.log("Error fetching user:", err);
-      return res.send('Error occurred while logging in');
+  conn.query('SELECT * FROM users WHERE username = ? AND password = ?', [username, password], (err, results) => {
+    if (results.length > 0) {
+      req.session.user = results[0];
+      res.redirect(results[0].is_admin ? '/admin' : '/dashboard');
+    } else {
+      res.send('Invalid credentials');
     }
-
-    if (results.length === 0) {
-      return res.send('Invalid credentials');
-    }
-
-    const user = results[0];
-
-    // Compare password with the hashed password
-    bcrypt.compare(password, user.password, (err, isMatch) => {
-      if (err) {
-        console.log("Error comparing password:", err);
-        return res.send('Error occurred while logging in');
-      }
-
-      if (!isMatch) {
-        return res.send('Invalid credentials');
-      }
-
-      // Save the user data in session
-      req.session.user = user;
-
-      // Redirect based on role
-      res.redirect(user.role === 'admin' ? '/admin' : '/dashboard');
-    });
   });
 });
 
-// Dashboard Route
-app.get('/dashboard', isAuth, (req, res) => {
-  const userDir = `./uploads/${req.session.user.username}`;
-  fs.readdir(userDir, (err, files) => {
-    if (err) {
-      console.log("Error reading user files:", err);
-      return res.send('Error loading your files');
-    }
-    res.render('dashboard', { username: req.session.user.username, files });
+app.get('/logout', (req, res) => {
+  req.session.destroy(() => {
+    res.redirect('/login');
   });
 });
 
-// File Upload Route
-app.post('/upload', isAuth, upload.single('file'), (req, res) => {
-  res.redirect('/dashboard');
+app.get('/dashboard', isAuthenticated, (req, res) => {
+  conn.query('SELECT * FROM files WHERE user_id = ?', [req.session.user.id], (err, files) => {
+    res.render('dashboard', { user: req.session.user, files });
+  });
 });
 
-// File Download Route
-app.get('/download/:filename', isAuth, (req, res) => {
-  const filePath = path.join(__dirname, 'uploads', req.session.user.username, req.params.filename);
+app.post('/upload', isAuthenticated, upload.single('file'), (req, res) => {
+  const uploadDate = new Date();
+  conn.query(
+    'INSERT INTO files (filename, originalname, user_id, uploaded_at) VALUES (?, ?, ?, ?)',
+    [req.file.filename, req.file.originalname, req.session.user.id, uploadDate],
+    () => res.redirect('/dashboard')
+  );
+});
+
+app.post('/delete/:id', isAuthenticated, (req, res) => {
+  const fileId = req.params.id;
+  conn.query('SELECT * FROM files WHERE id = ? AND user_id = ?', [fileId, req.session.user.id], (err, results) => {
+    if (results.length > 0) {
+      fs.unlinkSync(path.join(__dirname, 'public/uploads', results[0].filename));
+      conn.query('DELETE FROM files WHERE id = ?', [fileId], () => res.redirect('/dashboard'));
+    } else {
+      res.send('Not authorized');
+    }
+  });
+});
+
+app.get('/download/:filename', isAuthenticated, (req, res) => {
+  const filePath = path.join(__dirname, 'public/uploads', req.params.filename);
   res.download(filePath);
 });
 
-// Admin Route
-app.get('/admin', isAdmin, (req, res) => {
-  fs.readdir('./uploads', (err, users) => {
-    const allData = {};
-    users.forEach(user => {
-      const files = fs.readdirSync(`./uploads/${user}`);
-      allData[user] = files;
-    });
-    res.render('admin', { allData });
+app.get('/admin', isAuthenticated, isAdmin, (req, res) => {
+  conn.query('SELECT files.*, users.username FROM files JOIN users ON files.user_id = users.id', (err, files) => {
+    res.render('admin_dashboard', { user: req.session.user, files });
   });
 });
 
-// Logout Route
-app.get('/logout', (req, res) => {
-  req.session.destroy();
-  res.redirect('/login');
+app.post('/admin/delete/:id', isAuthenticated, isAdmin, (req, res) => {
+  const fileId = req.params.id;
+  conn.query('SELECT * FROM files WHERE id = ?', [fileId], (err, results) => {
+    if (results.length > 0) {
+      fs.unlinkSync(path.join(__dirname, 'public/uploads', results[0].filename));
+      conn.query('DELETE FROM files WHERE id = ?', [fileId], () => res.redirect('/admin'));
+    } else {
+      res.send('File not found');
+    }
+  });
 });
 
-// Server Setup
-app.listen(3000, () => console.log('Server started on http://localhost:3000'));
+app.listen(process.env.PORT, () => console.log(`Server running on port ${process.env.PORT}`));
