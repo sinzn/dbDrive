@@ -1,19 +1,57 @@
 <!DOCTYPE html>
 <html>
-<head><title>Register</title></head>
+
+<head>
+    <title>Register</title>
+    <style>
+        body {
+            font-family: Tahoma, Arial, Verdana, sans-serif;
+            font-size: 13px;
+            color: #000000;
+            line-height: 25px;
+        }
+    </style>
+</head>
+
 <body>
-  <center>
-    <h2>Register</h2>
-    <form method="POST" action="/register">
-      <label>Username:</label><br>
-      <input type="text" name="username" required><br>
-      <label>Password:</label><br>
-      <input type="password" name="password" required><br>
-      <label>Register as Admin:</label>
-      <input type="checkbox" name="is_admin" value="1"><br><br>
-      <input type="submit" value="Register">
+    <form action="/register" method="POST">
+        <table align="center" style="margin-top: 100px;">
+            <tr>
+                <td>Username</td>
+                <td><input type="text" name="username" required></td>
+            </tr>
+            <tr>
+                <td>Password</td>
+                <td>
+                    <input type="password" name="password" id="myInput" required>
+                    <span onclick="togglePassword()" style="cursor:pointer;">👁️</span>
+                </td>
+            </tr>
+            <tr>
+                <td>Register As</td>
+                <td>
+                    <select name="is_admin" required>
+                        <option value="0">Normal User</option>
+                        <option  value="1">Admin</option>
+                    </select>
+                </td>
+            </tr>
+            <tr>
+                <td></td>
+                <td>
+                    <input type="submit" value="Register">
+                    <button type="button" onclick="window.location.href='/login'">Login</button>
+                </td>
+            </tr>
+        </table>
     </form>
-    <a href="/login">Already have an account? Login</a>
-  </center>
+
+    <script>
+        function togglePassword() {
+            var input = document.getElementById("myInput");
+            input.type = input.type === "password" ? "text" : "password";
+        }
+    </script>
 </body>
+
 </html>
